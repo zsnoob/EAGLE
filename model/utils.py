@@ -117,27 +117,27 @@ def generate_tree_buffers(tree_choices, device="cuda"):
         start += depth_counts[i]
 
     tree_indices = torch.zeros(tree_len, dtype=torch.long)
-    p_indices = [0 for _ in range(tree_len - 1)]
-    b_indices = [[] for _ in range(tree_len - 1)]
-    tree_indices[0] = 0
+    p_indices = [0 for _ in range(tree_len - 1)] # 不包含根节点，所有路径有一个 parent indice
+    b_indices = [[] for _ in range(tree_len - 1)] # 为每个节点创建一个列表，包含了在自己之前的、所有同祖先、同深度节点的树索引
+    tree_indices[0] = 0 # 根节点索引为0
     start = 0
     bias = 0
-    for i in range(len(depth_counts)):
-        inlayer_bias = 0
+    for i in range(len(depth_counts)): # 每一个深度
+        inlayer_bias = 0 # 一个深度上的位置偏移
         b = []
-        for j in range(depth_counts[i]):
+        for j in range(depth_counts[i]): # 每一个偏置
             cur_tree_choice = sorted_tree_choices[start + j]
             cur_parent = cur_tree_choice[:-1]
-            if j != 0:
-                if cur_parent != parent:
-                    bias += 1
-                    inlayer_bias += 1
+            if j != 0: # 如果不是这个深度上的第一个节点
+                if cur_parent != parent: # 并且不再和上一个节点有共同祖先
+                    bias += 1 # 整体偏移+1
+                    inlayer_bias += 1 # 同深度偏移+1
                     parent = cur_parent
-                    b = []
+                    b = [] # 给新的祖先节点拥有的孩子新的b列表
             else:
                 parent = cur_parent
-            tree_indices[start + j + 1] = cur_tree_choice[-1] + TOPK * (i + bias) + 1
-            p_indices[start + j] = inlayer_bias
+            tree_indices[start + j + 1] = cur_tree_choice[-1] + TOPK * (i + bias) + 1 # 这里的TOPK * (i + bias) 表示每个不同的深度和不同的祖先最多有TOPK个孩子
+            p_indices[start + j] = inlayer_bias # 该位置的节点的祖先节点的偏移
             if len(b) > 0:
                 b_indices[start + j] = copy.deepcopy(b)
             else:
@@ -145,11 +145,11 @@ def generate_tree_buffers(tree_choices, device="cuda"):
             b.append(cur_tree_choice[-1] + TOPK * (i + bias) + 1)
         start += depth_counts[i]
 
-    p_indices = [-1] + p_indices
+    p_indices = [-1] + p_indices # 根节点没有祖先节点偏移，置为-1
     tree_position_ids = torch.zeros(tree_len, dtype=torch.long)
     start = 0
     for i in range(len(depth_counts)):
-        tree_position_ids[start + 1: start + depth_counts[i] + 1] = i + 1
+        tree_position_ids[start + 1: start + depth_counts[i] + 1] = i + 1 # 位置编码与深度相同
         start += depth_counts[i]
 
     retrieve_indices_nest = []
@@ -181,7 +181,7 @@ def generate_tree_buffers(tree_choices, device="cuda"):
         return sort_keys
 
     retrieve_indices = retrieve_indices.tolist()
-    retrieve_indices = sorted(retrieve_indices, key=custom_sort)
+    retrieve_indices = sorted(retrieve_indices, key=custom_sort) # pad的部分都是负数
     retrieve_indices = torch.tensor(retrieve_indices, dtype=torch.long)
 
     p_indices = torch.tensor(p_indices)
