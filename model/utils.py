@@ -165,7 +165,7 @@ def generate_tree_buffers(tree_choices, device="cuda"):
                 retrieve_paths.append(cur_tree_choice[:c + 1])
         retrieve_indices_nest.append(retrieve_indice)
     max_length = max([len(x) for x in retrieve_indices_nest])
-    retrieve_indices = [pad_path(path, max_length) for path in retrieve_indices_nest]
+    retrieve_indices = [pad_path(path, max_length) for path in retrieve_indices_nest] # 每一行包含独特路径的所有祖先路径只到自身路径的所有chioce中索引，并且pad为方阵
     retrieve_indices = torch.tensor(retrieve_indices, dtype=torch.long)
     retrieve_indices = retrieve_indices + 1
     retrieve_indices = torch.cat([torch.zeros((retrieve_indices.shape[0], 1), dtype=torch.long), retrieve_indices],
@@ -185,26 +185,28 @@ def generate_tree_buffers(tree_choices, device="cuda"):
     retrieve_indices = torch.tensor(retrieve_indices, dtype=torch.long)
 
     p_indices = torch.tensor(p_indices)
-    p_indices_new = p_indices[retrieve_indices]
+    p_indices_new = p_indices[retrieve_indices] # shape和retrieve_indice相同，值经过p_indices映射: choice中index->祖先节点偏移
     p_indices_new = p_indices_new.tolist()
 
-    b_indices = [[]] + b_indices
-    b_indices_new = []
-    for ib in range(retrieve_indices.shape[0]):
+    b_indices = [[]] + b_indices # 根节点没有兄弟
+    b_indices_new = [] 
+    for ib in range(retrieve_indices.shape[0]): # 每一个路径
         iblist = []
-        for jb in range(retrieve_indices.shape[1]):
+        for jb in range(retrieve_indices.shape[1]): # 每一个路径中从祖先节点到叶子节点的choice中索引
             index = retrieve_indices[ib, jb]
-            if index == -1:
+            if index == -1: # 若是PAD出来的
                 iblist.append([])
             else:
-                b = b_indices[index]
-                if len(b) > 0:
+                b = b_indices[index] # 通过节点ID得到该节点同深度同祖先偏移在前的节点树索引
+                if len(b) > 0: # 如果有左兄弟
                     bt = []
-                    for bi in b:
+                    for bi in b: # 自己的所有左兄弟
+                        # 返回一个包含所有 True 条件位置的索引的张量。在这个场景中，condition 是 tree_indices == bi
+                        # tree_indices 为每个choice的节点映射一个树索引，此处获得了左兄弟的节点ID
                         bt.append(torch.where(tree_indices == bi)[0].item())
                     iblist.append(torch.tensor(bt, device=device))
                 else:
-                    iblist.append(b)
+                    iblist.append(b) # 没左兄弟直接添加空列表
         b_indices_new.append(iblist)
 
     # Aggregate the generated buffers into a dictionary
@@ -222,8 +224,9 @@ def generate_tree_buffers(tree_choices, device="cuda"):
         else torch.tensor(v, device=device)
         for k, v in tree_buffers.items()
     }
-    tree_buffers["p_indices"] = p_indices_new
-    tree_buffers["b_indices"] = b_indices_new
+    # 都为 路径个数*树深度 的方阵 与retrieve_indices相同
+    tree_buffers["p_indices"] = p_indices_new # 祖先节点偏移信息
+    tree_buffers["b_indices"] = b_indices_new # 兄弟节点id信息, 可能有多个
     return tree_buffers
 
 
